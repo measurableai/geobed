@@ -200,7 +200,6 @@ var defaultGeobedOptions = GeobedOptions{
 
 // Creates a new Geobed instance. You do not need more than one. You do not want more than one. There's a fair bit of data to load into memory.
 func NewGeobed(opt ...GeobedOptions) GeoBed {
-
 	opts := defaultGeobedOptions
 	for _, o := range opt {
 		opts.DataDir = o.DataDir
