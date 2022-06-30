@@ -6,15 +6,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/gob"
-	geohash "github.com/TomiHiltunen/geohash-golang"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	geohash "github.com/TomiHiltunen/geohash-golang"
 )
 
 // There are over 2.4 million cities in the world. The Geonames data set only contains 143,270 and the MaxMind set contains 567,382 and 3,173,959 in the other MaxMind set.
@@ -32,10 +34,10 @@ import (
 
 // A list of data sources.
 var dataSetFiles = []map[string]string{
-	{"url": "http://download.geonames.org/export/dump/cities1000.zip", "path": "./geobed-data/cities1000.zip", "id": "geonamesCities1000"},
-	{"url": "http://download.geonames.org/export/dump/countryInfo.txt", "path": "./geobed-data/countryInfo.txt", "id": "geonamesCountryInfo"},
-	{"url": "http://download.maxmind.com/download/worldcities/worldcitiespop.txt.gz", "path": "./geobed-data/worldcitiespop.txt.gz", "id": "maxmindWorldCities"},
-	//{"url": "http://geolite.maxmind.com/download/geoip/database/GeoLiteCity_CSV/GeoLiteCity-latest.zip", "path": "./geobed-data/GeoLiteCity-latest.zip", "id": "maxmindLiteCity"},
+	{"url": "http://download.geonames.org/export/dump/cities1000.zip", "fileName": "cities1000.zip", "id": "geonamesCities1000"},
+	{"url": "http://download.geonames.org/export/dump/countryInfo.txt", "fileName": "countryInfo.txt", "id": "geonamesCountryInfo"},
+	{"url": "http://download.maxmind.com/download/worldcities/worldcitiespop.txt.gz", "fileName": "worldcitiespop.txt.gz", "id": "maxmindWorldCities"},
+	//{"url": "http://geolite.maxmind.com/download/geoip/database/GeoLiteCity_CSV/GeoLiteCity-latest.zip", "fileName": "GeoLiteCity-latest.zip", "id": "maxmindLiteCity"},
 }
 
 // A handy map of US state codes to full names.
@@ -108,8 +110,9 @@ var UsSateCodes = map[string]string{
 
 // Contains all of the city and country data. Cities are split into buckets by country to increase lookup speed when the country is known.
 type GeoBed struct {
-	c  Cities
-	co []CountryInfo
+	dataDir string
+	c       Cities
+	co      []CountryInfo
 }
 
 type Cities []GeobedCity
@@ -176,6 +179,10 @@ type CountryInfo struct {
 	EquivalentFipsCode string
 }
 
+type GeobedOptions struct {
+	DataDir string
+}
+
 // Options when geocoding. For now just an exact match on city name, but there will be potentially other options that can be set to adjust how searching/matching works.
 type GeocodeOptions struct {
 	ExactCity bool
@@ -187,14 +194,26 @@ type r struct {
 	t int
 }
 
+var defaultGeobedOptions = GeobedOptions{
+	DataDir: "./geobed-data",
+}
+
 // Creates a new Geobed instance. You do not need more than one. You do not want more than one. There's a fair bit of data to load into memory.
-func NewGeobed() GeoBed {
-	g := GeoBed{}
+func NewGeobed(opt ...GeobedOptions) GeoBed {
+
+	opts := defaultGeobedOptions
+	for _, o := range opt {
+		opts.DataDir = o.DataDir
+	}
+
+	g := GeoBed{
+		dataDir: opts.DataDir,
+	}
 
 	var err error
-	g.c, err = loadGeobedCityData()
-	g.co, err = loadGeobedCountryData()
-	err = loadGeobedCityNameIdx()
+	g.c, err = g.loadGeobedCityData()
+	g.co, err = g.loadGeobedCountryData()
+	err = g.loadGeobedCityNameIdx()
 	if err != nil || len(g.c) == 0 {
 		g.downloadDataSets()
 		g.loadDataSets()
@@ -204,15 +223,21 @@ func NewGeobed() GeoBed {
 	return g
 }
 
+// get the geobed data file
+func (g *GeoBed) getDataFilePath(file string) string {
+	return filepath.Join(g.dataDir, file)
+}
+
 // Downloads the data sets if needed.
 func (g *GeoBed) downloadDataSets() {
-	os.Mkdir("./geobed-data", 0777)
+	os.Mkdir(g.dataDir, 0777)
 	for _, f := range dataSetFiles {
-		_, err := os.Stat(f["path"])
+		filePath := g.getDataFilePath(f["fileName"])
+		_, err := os.Stat(filePath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				// log.Println(f["path"] + " does not exist, downloading...")
-				out, oErr := os.Create(f["path"])
+				// log.Println(filePath + " does not exist, downloading...")
+				out, oErr := os.Create(filePath)
 				defer out.Close()
 				if oErr == nil {
 					r, rErr := http.Get(f["url"])
@@ -222,7 +247,7 @@ func (g *GeoBed) downloadDataSets() {
 						if nErr != nil {
 							// log.Println("Failed to copy data file, it will be tried again on next application start.")
 							// remove file so another attempt can be made, should something fail
-							err = os.Remove(f["path"])
+							err = os.Remove(filePath)
 						}
 						r.Body.Close()
 					}
@@ -241,8 +266,9 @@ func (g *GeoBed) loadDataSets() {
 
 	for _, f := range dataSetFiles {
 		// This one is zipped
+		filePath := g.getDataFilePath(f["fileName"])
 		if f["id"] == "geonamesCities1000" {
-			rz, err := zip.OpenReader(f["path"])
+			rz, err := zip.OpenReader(filePath)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -312,7 +338,7 @@ func (g *GeoBed) loadDataSets() {
 			// It also has a lot of dupes
 			maxMindCityDedupeIdx = make(map[string][]string)
 
-			fi, err := os.Open(f["path"])
+			fi, err := os.Open(filePath)
 			if err != nil {
 				log.Println(err)
 			}
@@ -396,7 +422,7 @@ func (g *GeoBed) loadDataSets() {
 
 		// ...And this one is just plain text
 		if f["id"] == "geonamesCountryInfo" {
-			fi, err := os.Open(f["path"])
+			fi, err := os.Open(filePath)
 
 			if err != nil {
 				log.Fatal(err)
@@ -951,7 +977,7 @@ func (g GeoBed) store() error {
 		return err
 	}
 
-	fh, eopen := os.OpenFile("./geobed-data/g.c.dmp", os.O_CREATE|os.O_WRONLY, 0666)
+	fh, eopen := os.OpenFile(g.getDataFilePath("g.c.dmp"), os.O_CREATE|os.O_WRONLY, 0666)
 	defer fh.Close()
 	if eopen != nil {
 		b.Reset()
@@ -973,7 +999,7 @@ func (g GeoBed) store() error {
 		return err
 	}
 
-	fh, eopen = os.OpenFile("./geobed-data/g.co.dmp", os.O_CREATE|os.O_WRONLY, 0666)
+	fh, eopen = os.OpenFile(g.getDataFilePath("g.co.dmp"), os.O_CREATE|os.O_WRONLY, 0666)
 	defer fh.Close()
 	if eopen != nil {
 		b.Reset()
@@ -995,7 +1021,7 @@ func (g GeoBed) store() error {
 		return err
 	}
 
-	fh, eopen = os.OpenFile("./geobed-data/cityNameIdx.dmp", os.O_CREATE|os.O_WRONLY, 0666)
+	fh, eopen = os.OpenFile(g.getDataFilePath("cityNameIdx.dmp"), os.O_CREATE|os.O_WRONLY, 0666)
 	defer fh.Close()
 	if eopen != nil {
 		b.Reset()
@@ -1013,8 +1039,8 @@ func (g GeoBed) store() error {
 }
 
 // Loads a GeobedCity dump, which saves a bit of time.
-func loadGeobedCityData() ([]GeobedCity, error) {
-	fh, err := os.Open("./geobed-data/g.c.dmp")
+func (g GeoBed) loadGeobedCityData() ([]GeobedCity, error) {
+	fh, err := os.Open(g.getDataFilePath("g.c.dmp"))
 	if err != nil {
 		return nil, err
 	}
@@ -1027,8 +1053,8 @@ func loadGeobedCityData() ([]GeobedCity, error) {
 	return gc, nil
 }
 
-func loadGeobedCountryData() ([]CountryInfo, error) {
-	fh, err := os.Open("./geobed-data/g.co.dmp")
+func (g GeoBed) loadGeobedCountryData() ([]CountryInfo, error) {
+	fh, err := os.Open(g.getDataFilePath("g.co.dmp"))
 	if err != nil {
 		return nil, err
 	}
@@ -1041,8 +1067,8 @@ func loadGeobedCountryData() ([]CountryInfo, error) {
 	return co, nil
 }
 
-func loadGeobedCityNameIdx() error {
-	fh, err := os.Open("./geobed-data/cityNameIdx.dmp")
+func (g GeoBed) loadGeobedCityNameIdx() error {
+	fh, err := os.Open(g.getDataFilePath("cityNameIdx.dmp"))
 	if err != nil {
 		return err
 	}
