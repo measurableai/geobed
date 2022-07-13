@@ -199,13 +199,13 @@ var defaultGeobedOptions = GeobedOptions{
 }
 
 // Creates a new Geobed instance. You do not need more than one. You do not want more than one. There's a fair bit of data to load into memory.
-func NewGeobed(opt ...GeobedOptions) GeoBed {
+func NewGeobed(opt ...GeobedOptions) *GeoBed {
 	opts := defaultGeobedOptions
 	for _, o := range opt {
 		opts.DataDir = o.DataDir
 	}
 
-	g := GeoBed{
+	g := &GeoBed{
 		dataDir: opts.DataDir,
 	}
 
@@ -965,7 +965,7 @@ func toUpper(s string) string {
 
 // Dumps the Geobed data to disk. This speeds up startup time on subsequent runs (or if calling NewGeobed() multiple times which should be avoided if possible).
 // TODO: Refactor
-func (g GeoBed) store() error {
+func (g *GeoBed) store() error {
 	b := new(bytes.Buffer)
 
 	// Store the city info
@@ -1038,7 +1038,7 @@ func (g GeoBed) store() error {
 }
 
 // Loads a GeobedCity dump, which saves a bit of time.
-func (g GeoBed) loadGeobedCityData() ([]GeobedCity, error) {
+func (g *GeoBed) loadGeobedCityData() ([]GeobedCity, error) {
 	fh, err := os.Open(g.getDataFilePath("g.c.dmp"))
 	if err != nil {
 		return nil, err
@@ -1052,7 +1052,7 @@ func (g GeoBed) loadGeobedCityData() ([]GeobedCity, error) {
 	return gc, nil
 }
 
-func (g GeoBed) loadGeobedCountryData() ([]CountryInfo, error) {
+func (g *GeoBed) loadGeobedCountryData() ([]CountryInfo, error) {
 	fh, err := os.Open(g.getDataFilePath("g.co.dmp"))
 	if err != nil {
 		return nil, err
@@ -1066,7 +1066,7 @@ func (g GeoBed) loadGeobedCountryData() ([]CountryInfo, error) {
 	return co, nil
 }
 
-func (g GeoBed) loadGeobedCityNameIdx() error {
+func (g *GeoBed) loadGeobedCityNameIdx() error {
 	fh, err := os.Open(g.getDataFilePath("cityNameIdx.dmp"))
 	if err != nil {
 		return err
