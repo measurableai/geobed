@@ -36,7 +36,7 @@ import (
 var dataSetFiles = []map[string]string{
 	{"url": "http://download.geonames.org/export/dump/cities1000.zip", "fileName": "cities1000.zip", "id": "geonamesCities1000"},
 	{"url": "http://download.geonames.org/export/dump/countryInfo.txt", "fileName": "countryInfo.txt", "id": "geonamesCountryInfo"},
-	{"url": "http://download.maxmind.com/download/worldcities/worldcitiespop.txt.gz", "fileName": "worldcitiespop.txt.gz", "id": "maxmindWorldCities"},
+	// {"url": "http://download.maxmind.com/download/worldcities/worldcitiespop.txt.gz", "fileName": "worldcitiespop.txt.gz", "id": "maxmindWorldCities"},
 	//{"url": "http://geolite.maxmind.com/download/geoip/database/GeoLiteCity_CSV/GeoLiteCity-latest.zip", "fileName": "GeoLiteCity-latest.zip", "id": "maxmindLiteCity"},
 }
 
